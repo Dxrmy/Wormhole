@@ -38,6 +38,7 @@ For advanced users or headless servers, Wormhole can be completely controlled vi
 | `-port` | `7777` | The local TCP port the proxy listens on. |
 | `-webport` | `8080` | The port used to host the Web UI dashboard. |
 | `-headless` | `false` | Disables the Web UI entirely. (Requires `-server` to be set). |
+| `-verbose` | `false` | Enables detailed logging for debugging connections. |
 
 **Example (Headless Mode):**
 ```bash

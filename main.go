@@ -22,6 +22,7 @@ var (
 	serverName   = flag.String("name", "Epic Crossplay World", "The name broadcasted to the console.")
 	webPort      = flag.String("webport", "8080", "The port for the Web UI.")
 	headless     = flag.Bool("headless", false, "Disable the Web UI and run purely in the terminal.")
+	verbose      = flag.Bool("verbose", false, "Enable verbose logging for debugging connections.")
 )
 
 // The HTML for the web dashboard, embedded directly into the executable so we don't need extra files.
@@ -451,6 +452,10 @@ func startTCPProxy(ctx context.Context, localPort, target string) {
 func handleConnection(clientConn net.Conn, target string) {
 	defer clientConn.Close()
 	
+	if *verbose {
+		log.Printf("[Verbose] Console connected from %s", clientConn.RemoteAddr())
+	}
+
 	// Enable Keep-Alives to prevent the OS from dropping idle connections
 	if tcpConn, ok := clientConn.(*net.TCPConn); ok {
 		tcpConn.SetKeepAlive(true)
@@ -464,10 +469,17 @@ func handleConnection(clientConn net.Conn, target string) {
 		if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
 			msg = "Proxy: Connection to target server timed out."
 		}
+		if *verbose {
+			log.Printf("[Verbose] Failed to connect to target %s: %v", target, err)
+		}
 		sendDisconnect(clientConn, msg)
 		return 
 	}
 	defer serverConn.Close()
+	
+	if *verbose {
+		log.Printf("[Verbose] Successfully bridged %s to target %s", clientConn.RemoteAddr(), target)
+	}
 	
 	if tcpConn, ok := serverConn.(*net.TCPConn); ok {
 		tcpConn.SetKeepAlive(true)
