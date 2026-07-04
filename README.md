@@ -2,7 +2,7 @@
 
 A local proxy that tricks your Xbox, PlayStation, or Switch into thinking a remote PC server is running on your home network, allowing you to easily join custom Terraria servers.
 
-It runs locally on Windows, macOS, Linux, or mobile network emulators.
+It runs locally on Windows, macOS, Linux, or Linux terminal emulators on mobile (like Termux).
 
 ## Quick Start
 
