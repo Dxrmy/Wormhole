@@ -4,21 +4,20 @@ A local proxy that tricks your Xbox, PlayStation, or Switch into thinking a remo
 
 It runs locally on Windows, macOS, Linux, or mobile network emulators.
 
-## Installation
+## Quick Start
 
 ### Windows
-1. Download `proxy-windows-amd64.exe` from this repository.
-2. Double-click to run it.
-3. Your web browser will automatically open a dashboard.
-4. Enter the IP of the server you want to join and click **Start Bridge**.
+Open **PowerShell** and run the following command. It will automatically download and start the proxy dashboard.
+```powershell
+irm https://raw.githubusercontent.com/Dxrmy/Wormhole/main/install.ps1 | iex
+```
 
 ### macOS & Linux
-Download the binary for your specific system and run it via terminal:
+Open your **Terminal** and run the following command. It will auto-detect your operating system, download the correct binary, and launch it.
 ```bash
-chmod +x proxy-mac-arm64
-./proxy-mac-arm64
+curl -sL https://raw.githubusercontent.com/Dxrmy/Wormhole/main/install.sh | bash
 ```
-It will print out a local IP address (like `http://127.0.0.1:8080`). Open that in your browser to access the dashboard.
+Once it runs, look at the terminal output to find the IP address (like `http://127.0.0.1:8080`), and open that in your web browser to access the dashboard!
 
 ## How to Connect on Console
 
