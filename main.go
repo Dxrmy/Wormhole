@@ -325,8 +325,9 @@ func (e *ProxyEngine) Stop() {
 
 // startUDPBroadcast sends out the LAN heartbeat packets that Terraria consoles listen for.
 func startUDPBroadcast(ctx context.Context, name, tcpPort string) {
-	// The specific byte format Terraria uses to identify local servers
-	payload := []byte(fmt.Sprintf("Terraria145\x00%s\x00%s", tcpPort, name))
+	portInt := 7777
+	fmt.Sscanf(tcpPort, "%d", &portInt)
+
 	conn, err := net.ListenPacket("udp4", ":0")
 	if err != nil {
 		log.Printf("UDP Error: %v", err)
@@ -339,8 +340,8 @@ func startUDPBroadcast(ctx context.Context, name, tcpPort string) {
 		conn.Close()
 	}()
 
-	// Broadcast every 2 seconds
-	ticker := time.NewTicker(2 * time.Second)
+	// Broadcast every 1 second for better discovery
+	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
 
 	for {
@@ -348,9 +349,37 @@ func startUDPBroadcast(ctx context.Context, name, tcpPort string) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
+			payload := buildPayload(name, portInt)
 			broadcastPacket(conn, payload)
 		}
 	}
+}
+
+// buildPayload constructs the exact binary structure required for Terraria 1.4.4 discovery
+func buildPayload(name string, portInt int) []byte {
+	// Magic version (1010)
+	payload := []byte{0xF2, 0x03, 0x00, 0x00}
+	
+	// Port (Little Endian)
+	payload = append(payload, byte(portInt&0xFF), byte((portInt>>8)&0xFF), 0x00, 0x00)
+	
+	// World Name (Length-prefixed)
+	if len(name) > 255 {
+		name = name[:255]
+	}
+	payload = append(payload, byte(len(name)))
+	payload = append(payload, []byte(name)...)
+	
+	// Host Name (Length-prefixed)
+	host := "WormholeProxy"
+	payload = append(payload, byte(len(host)))
+	payload = append(payload, []byte(host)...)
+	
+	// Trailing world config bytes (copied exactly from real server)
+	// These include MaxPlayers, WorldId, etc.
+	payload = append(payload, []byte{'h', 0x10, 0x01, 0x00, 0x00, 0x00, 0x00, 0x08, 0x00, 0x00}...)
+	
+	return payload
 }
 
 // broadcastPacket iterates over all active network interfaces and blasts the UDP packet
