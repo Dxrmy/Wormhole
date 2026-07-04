@@ -1,3 +1,4 @@
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 $ErrorActionPreference = "Stop"
 $repoUrl = "https://github.com/Dxrmy/Wormhole/releases/latest/download"
 $binaryName = "proxy-windows-amd64.exe"
