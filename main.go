@@ -459,7 +459,14 @@ func handleConnection(clientConn net.Conn, target string) {
 	
 	// Dial the real Terraria server
 	serverConn, err := net.DialTimeout("tcp", target, 10*time.Second)
-	if err != nil { return }
+	if err != nil {
+		msg := "Proxy: Target server is offline or unreachable."
+		if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+			msg = "Proxy: Connection to target server timed out."
+		}
+		sendDisconnect(clientConn, msg)
+		return 
+	}
 	defer serverConn.Close()
 	
 	if tcpConn, ok := serverConn.(*net.TCPConn); ok {
@@ -485,4 +492,31 @@ func handleConnection(clientConn net.Conn, target string) {
 	}()
 	
 	wg.Wait()
+}
+
+// sendDisconnect crafts a Terraria protocol Disconnect packet (Packet ID 2)
+// This prevents the console client from hanging indefinitely if the proxy cannot reach the target server.
+func sendDisconnect(conn net.Conn, reason string) {
+	// Truncate string to avoid dealing with LEB128 multi-byte length prefixes for simplicity
+	if len(reason) > 127 {
+		reason = reason[:127]
+	}
+	
+	reasonLen := len(reason)
+	// payload = NetworkText Mode (1 byte) + String Length (1 byte) + String Data
+	payloadLen := 1 + 1 + reasonLen
+	packetId := 2
+	
+	// Total packet length: 2 (length header) + 1 (packet id) + payloadLen
+	totalLen := uint16(2 + 1 + payloadLen)
+	
+	// 2 bytes Length, 1 byte ID, 1 byte Mode (0=Literal), 1 byte StrLen, StrData
+	buf := make([]byte, 0, totalLen)
+	buf = append(buf, byte(totalLen&0xFF), byte(totalLen>>8))
+	buf = append(buf, byte(packetId))
+	buf = append(buf, 0) // Mode: Literal
+	buf = append(buf, byte(reasonLen))
+	buf = append(buf, []byte(reason)...)
+	
+	conn.Write(buf)
 }
