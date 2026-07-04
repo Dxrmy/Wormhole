@@ -2,7 +2,8 @@
 set -e
 
 REPO="Dxrmy/Wormhole"
-BASE_URL="https://github.com/$REPO/releases/latest/download"
+BRANCH="main"
+BASE_URL="https://raw.githubusercontent.com/$REPO/$BRANCH"
 
 # Detect OS and Arch
 OS="$(uname -s | tr '[:upper:]' '[:lower:]')"
