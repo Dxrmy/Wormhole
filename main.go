@@ -24,6 +24,7 @@ var (
 	headless     = flag.Bool("headless", false, "Disable the Web UI and run purely in the terminal.")
 )
 
+// The HTML for the web dashboard, embedded directly into the executable so we don't need extra files.
 const indexHTML = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -171,6 +172,7 @@ const indexHTML = `<!DOCTYPE html>
 </body>
 </html>`
 
+// ProxyEngine manages the lifecycle of the network bridge
 type ProxyEngine struct {
 	mu     sync.Mutex
 	cancel context.CancelFunc
@@ -184,21 +186,23 @@ var engine ProxyEngine
 func main() {
 	flag.Parse()
 
+	// If headless mode is enabled, skip the web server and run purely in the terminal.
 	if *headless {
 		if *targetServer == "" {
 			log.Fatal("Headless mode requires a -server IP to be provided.")
 		}
 		log.Println("Starting in Headless Mode...")
 		engine.Start(*targetServer, *serverName)
-		// Block forever
+		// Block forever so the program doesn't exit
 		select {}
 	}
 
-	// Auto-start if IP provided even in Web mode
+	// Auto-start the proxy if an IP was provided via command line, even if web mode is on.
 	if *targetServer != "" {
 		engine.Start(*targetServer, *serverName)
 	}
 
+	// Setup Web UI routes
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
 		w.Write([]byte(indexHTML))
@@ -230,9 +234,13 @@ func main() {
 		engine.Stop()
 	})
 
+	// Print connection info for users
 	printWebUIAddresses(*webPort)
+	
+	// Automatically open the user's web browser to the dashboard
 	openBrowser("http://127.0.0.1:" + *webPort)
 
+	// Start the local web server
 	log.Fatal(http.ListenAndServe("0.0.0.0:"+*webPort, nil))
 }
 
@@ -258,6 +266,7 @@ func printWebUIAddresses(port string) {
 				case *net.IPAddr:
 					ip = v.IP
 				}
+				// Skip loopback and IPv6 addresses for simplicity
 				if ip != nil && ip.To4() != nil && !ip.IsLoopback() {
 					fmt.Printf(" ► Network/Mobile Device: http://%s:%s\n", ip.String(), port)
 				}
@@ -271,7 +280,7 @@ func openBrowser(url string) {
 	var err error
 	switch runtime.GOOS {
 	case "linux":
-		// Do not attempt to open browser in headless server environments
+		// Do not attempt to open a browser in headless linux server environments
 		if os.Getenv("DISPLAY") != "" {
 			err = exec.Command("xdg-open", url).Start()
 		}
@@ -281,16 +290,16 @@ func openBrowser(url string) {
 		err = exec.Command("open", url).Start()
 	}
 	if err != nil {
-		// Silently ignore if browser can't be opened
+		// Silently ignore if a browser can't be opened
 	}
 }
 
-// Engine Methods
+// Start launches the background UDP broadcaster and TCP proxy
 func (e *ProxyEngine) Start(target, name string) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	if e.status {
-		return fmt.Errorf("Proxy is already running")
+		return fmt.Errorf("proxy is already running")
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -304,6 +313,7 @@ func (e *ProxyEngine) Start(target, name string) error {
 	return nil
 }
 
+// Stop shuts down the network bridge cleanly
 func (e *ProxyEngine) Stop() {
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -313,9 +323,9 @@ func (e *ProxyEngine) Stop() {
 	}
 }
 
-// Core Network Logic with Context Cancellation
-
+// startUDPBroadcast sends out the LAN heartbeat packets that Terraria consoles listen for.
 func startUDPBroadcast(ctx context.Context, name, tcpPort string) {
+	// The specific byte format Terraria uses to identify local servers
 	payload := []byte(fmt.Sprintf("Terraria145\x00%s\x00%s", tcpPort, name))
 	conn, err := net.ListenPacket("udp4", ":0")
 	if err != nil {
@@ -323,11 +333,13 @@ func startUDPBroadcast(ctx context.Context, name, tcpPort string) {
 		return
 	}
 	
+	// Close the connection if the proxy is stopped
 	go func() {
 		<-ctx.Done()
 		conn.Close()
 	}()
 
+	// Broadcast every 2 seconds
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
 
@@ -341,23 +353,34 @@ func startUDPBroadcast(ctx context.Context, name, tcpPort string) {
 	}
 }
 
+// broadcastPacket iterates over all active network interfaces and blasts the UDP packet
 func broadcastPacket(conn net.PacketConn, payload []byte) {
+	// Send to global broadcast address first as a fallback
 	if addr, err := net.ResolveUDPAddr("udp4", "255.255.255.255:8888"); err == nil {
 		conn.WriteTo(payload, addr)
 	}
+	
 	ifaces, err := net.Interfaces()
 	if err != nil { return }
+	
 	for _, iface := range ifaces {
+		// Skip offline or loopback interfaces
 		if iface.Flags&net.FlagUp == 0 || iface.Flags&net.FlagLoopback != 0 { continue }
+		
 		addrs, err := iface.Addrs()
 		if err != nil { continue }
+		
 		for _, addr := range addrs {
 			ipnet, ok := addr.(*net.IPNet)
 			if !ok { continue }
+			
 			ip4 := ipnet.IP.To4()
 			if ip4 == nil { continue }
+			
 			mask := ipnet.Mask
 			if len(mask) != 4 { continue }
+			
+			// Calculate the specific broadcast IP for this subnet
 			bcastIP := net.IPv4(ip4[0]|^mask[0], ip4[1]|^mask[1], ip4[2]|^mask[2], ip4[3]|^mask[3])
 			bcastAddr, err := net.ResolveUDPAddr("udp4", fmt.Sprintf("%s:8888", bcastIP.String()))
 			if err == nil {
@@ -367,6 +390,7 @@ func broadcastPacket(conn net.PacketConn, payload []byte) {
 	}
 }
 
+// startTCPProxy accepts incoming connections and routes them to the remote server
 func startTCPProxy(ctx context.Context, localPort, target string) {
 	listener, err := net.Listen("tcp", ":"+localPort)
 	if err != nil {
@@ -384,9 +408,9 @@ func startTCPProxy(ctx context.Context, localPort, target string) {
 		if err != nil {
 			select {
 			case <-ctx.Done():
-				return // Clean exit
+				return // Stopped by user
 			default:
-				time.Sleep(100 * time.Millisecond)
+				time.Sleep(100 * time.Millisecond) // Prevent CPU thrashing on error
 				continue
 			}
 		}
@@ -394,30 +418,42 @@ func startTCPProxy(ctx context.Context, localPort, target string) {
 	}
 }
 
+// handleConnection bridges the byte streams between the client and the remote server
 func handleConnection(clientConn net.Conn, target string) {
 	defer clientConn.Close()
+	
+	// Enable Keep-Alives to prevent the OS from dropping idle connections
 	if tcpConn, ok := clientConn.(*net.TCPConn); ok {
 		tcpConn.SetKeepAlive(true)
 		tcpConn.SetKeepAlivePeriod(30 * time.Second)
 	}
+	
+	// Dial the real Terraria server
 	serverConn, err := net.DialTimeout("tcp", target, 10*time.Second)
 	if err != nil { return }
 	defer serverConn.Close()
+	
 	if tcpConn, ok := serverConn.(*net.TCPConn); ok {
 		tcpConn.SetKeepAlive(true)
 		tcpConn.SetKeepAlivePeriod(30 * time.Second)
 	}
+	
 	var wg sync.WaitGroup
 	wg.Add(2)
+	
+	// Copy data from the remote server to the console
 	go func() {
 		defer wg.Done()
 		io.Copy(serverConn, clientConn)
 		if cw, ok := serverConn.(interface{ CloseWrite() error }); ok { cw.CloseWrite() }
 	}()
+	
+	// Copy data from the console to the remote server
 	go func() {
 		defer wg.Done()
 		io.Copy(clientConn, serverConn)
 		if cw, ok := clientConn.(interface{ CloseWrite() error }); ok { cw.CloseWrite() }
 	}()
+	
 	wg.Wait()
 }
